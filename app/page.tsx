@@ -1,65 +1,88 @@
-import Image from "next/image";
+import { prisma } from "./lib/prisma";
+import Link from "next/link";
+import { revalidatePath } from "next/cache";
 
-export default function Home() {
+export default async function Home() {
+  // 1. Fetch data directly from the database
+  const stations = await prisma.station.findMany({
+    include: {
+      _count: {
+        select: { channels: true }, // This lets us show how many channels each station has
+      },
+    },
+  });
+
+  // 2. Define the logic to create a station (Inline Server Action)
+  async function createStation(formData: FormData) {
+    "use server";
+    const name = formData.get("name") as string;
+    
+    // For now, we create/find a default user to own the station
+    const user = await prisma.user.upsert({
+      where: { id: 'admin-id' }, // Just for development
+      update: {},
+      create: { id: 'admin-id', name: 'Admin' }
+    });
+
+    await prisma.station.create({
+      data: {
+        name,
+        ownerId: user.id,
+      },
+    });
+
+    revalidatePath("/"); // Tells Next.js to refresh the list
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <main className="p-8 max-w-4xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6 text-white-900">
+        Fictional Radio & TV Station Management Platform
+      </h1>
+      
+      <div className="grid gap-6">
+        {/* Quick Actions Section */}
+        <section className="p-6 border rounded-lg bg-slate-50 shadow-sm">
+          <h2 className="text-xl font-semibold mb-4 text-black">Management Console</h2>
+          <form action={createStation} className="flex gap-4">
+            <input 
+              name="name"
+              required
+              placeholder="Enter the name of the station." 
+              className="flex-1 px-4 py-2 border rounded-md text-black"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
+              Create
+            </button>
+          </form>
+        </section>
+
+        {/* Station List Section */}
+        <section className="p-6 border rounded-lg">
+          <h2 className="text-xl font-semibold mb-4 text-white">My Stations</h2>
+          
+          {stations.length === 0 ? (
+            <p className="text-gray-500 italic">No TV stations, create one above</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {stations.map((station) => (
+                <div key={station.id} className="p-4 border rounded-lg hover:border-blue-300 transition-all bg-white shadow-sm flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-bold text-lg text-black">{station.name}</h3>
+                    <p className="text-sm text-gray-500">{station._count.channels} channels</p>
+                  </div>
+                  <Link
+                  href={`/stations/${station.id}`}
+                  className="mt-4 text-sm font-medium text-blue-600 hover:text-blue-800 text-left"
+                  >
+                  Enter console →
+                </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }
