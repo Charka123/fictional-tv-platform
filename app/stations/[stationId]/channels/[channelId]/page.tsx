@@ -79,12 +79,14 @@ async function importEPGItems(formData: FormData) {
   const finalEndTime = formData.get("finalEndTime") as string;
   const rawText = formData.get("rawText") as string;
 
+  const baseDate = new Date(`${date}T00:00:00`);
+
   const lines = rawText
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
 
-  const parsedItems = lines.map((line) => {
+  const parsedRawItems = lines.map((line) => {
     const firstSpaceIndex = line.indexOf(" ");
 
     if (firstSpaceIndex === -1) {
@@ -94,19 +96,46 @@ async function importEPGItems(formData: FormData) {
     const time = line.slice(0, firstSpaceIndex);
     const programName = line.slice(firstSpaceIndex + 1).trim();
 
+    return { time, programName };
+  });
+
+  let dayOffset = 0;
+  let previousMinutes: number | null = null;
+
+  const parsedItems = parsedRawItems.map((item) => {
+    const [hour, minute] = item.time.split(":").map(Number);
+    const currentMinutes = hour * 60 + minute;
+
+    if (previousMinutes !== null && currentMinutes < previousMinutes) {
+      dayOffset += 1;
+    }
+
+    previousMinutes = currentMinutes;
+
+    const startTime = new Date(baseDate);
+    startTime.setDate(baseDate.getDate() + dayOffset);
+    startTime.setHours(hour, minute, 0, 0);
+
     return {
-      time,
-      programName,
-      startTime: new Date(`${date}T${time}:00`),
+      programName: item.programName,
+      startTime,
     };
   });
+
+  const lastItem = parsedItems[parsedItems.length - 1];
+
+  const [finalHour, finalMinute] = finalEndTime.split(":").map(Number);
+  let finalEndDate = new Date(lastItem.startTime);
+  finalEndDate.setHours(finalHour, finalMinute, 0, 0);
+
+  if (finalEndDate <= lastItem.startTime) {
+    finalEndDate.setDate(finalEndDate.getDate() + 1);
+  }
 
   const itemsWithDuration = parsedItems.map((item, index) => {
     const nextItem = parsedItems[index + 1];
 
-    const endTime = nextItem
-      ? nextItem.startTime
-      : new Date(`${date}T${finalEndTime}:00`);
+    const endTime = nextItem ? nextItem.startTime : finalEndDate;
 
     const durationMinutes = Math.round(
       (endTime.getTime() - item.startTime.getTime()) / 60000
